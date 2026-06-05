@@ -10,7 +10,7 @@ local Camera = workspace.CurrentCamera
 local LockKeybind = Enum.KeyCode.E -- Phím bấm (Đè giữ)
 local TargetPartName = "Head"      -- Thay đổi mục tiêu khóa từ HumanoidRootPart sang ĐẦU (Head)
 local MaxLockDistance = 500       -- Khoảng cách tối đa (Studs)
-local FOVRadius = 1500             -- Vòng quét mục tiêu xung quanh chuột
+local FOVRadius = 6000             -- Vòng quét mục tiêu xung quanh chuột
 local Smoothness = 4              -- Độ mượt khi dí theo (càng cao càng mượt)
 
 -- CẤU HÌNH HIỆU ỨNG VIỀN TRẮNG (ESP RỖNG RUỘT)
