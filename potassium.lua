@@ -6,14 +6,15 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
--- CẤU HÌNH HỆ THỐNG LOCK-ON (HOLD PHÍM E)
+-- CẤU HÌNH HỆ THỐNG LOCK-ON (HOLD PHÍM E - CHỈ NGẮM ĐẦU)
 local LockKeybind = Enum.KeyCode.E -- Phím bấm (Đè giữ)
+local TargetPartName = "Head"      -- Thay đổi mục tiêu khóa từ HumanoidRootPart sang ĐẦU (Head)
 local MaxLockDistance = 500       -- Khoảng cách tối đa (Studs)
 local FOVRadius = 150             -- Vòng quét mục tiêu xung quanh chuột
 local Smoothness = 4              -- Độ mượt khi dí theo (càng cao càng mượt)
 
--- CẤU HÌNH HIỆU ỨNG VIỀN TRẮNG (ESP)
-local OUTLINE_COLOR = Color3.fromRGB(255, 255, 255) -- Đổi thành màu TRẮNG
+-- CẤU HÌNH HIỆU ỨNG VIỀN TRẮNG (ESP RỖNG RUỘT)
+local OUTLINE_COLOR = Color3.fromRGB(255, 255, 255) -- Màu TRẮNG
 local OUTLINE_TRANSPARENCY = 0                      -- 0 là viền đậm, rõ nét nhất
 local FILL_TRANSPARENCY = 1                         -- 1 là trong suốt hoàn toàn (chỉ giữ lại viền ngoài)
 
@@ -33,13 +34,13 @@ local function applyHighlight(character)
 	local existingHighlight = character:FindFirstChildOfClass("Highlight")
 	if existingHighlight then return end
 	
-	-- Tạo một Highlight mới tinh
+	-- Tạo một Highlight mới tinh bọc viền trắng, rỗng ruột
 	local newHighlight = Instance.new("Highlight")
 	newHighlight.Name = "PlayerESP"
 	newHighlight.Adornee = character
 	newHighlight.OutlineColor = OUTLINE_COLOR
 	newHighlight.OutlineTransparency = OUTLINE_TRANSPARENCY
-	newHighlight.FillTransparency = FILL_TRANSPARENCY -- Làm rỗng ruột bên trong
+	newHighlight.FillTransparency = FILL_TRANSPARENCY
 	newHighlight.Enabled = true
 	
 	-- Đặt vào nhân vật
@@ -63,10 +64,10 @@ local function onPlayerAdded(player)
 end
 
 -- ==========================================
--- PHẦN 2: LOGIC KHÓA MỤC TIÊU (LOCK-ON)
+-- PHẦN 2: LOGIC KHÓA MỤC TIÊU (LOCK-ON VÀO ĐẦU)
 -- ==========================================
 
--- HÀM TÌM MỤC TIÊU PHÙ HỢP GẦN CHUỘT NHẤT
+-- HÀM TÌM MỤC TIÊU PHÙ HỢP GẦN CHUỘT NHẤT (DỰA TRÊN VỊ TRÍ ĐẦU)
 local function getClosestPlayerToMouse()
 	local closestPlayer = nil
 	local shortestDistance = FOVRadius
@@ -74,15 +75,15 @@ local function getClosestPlayerToMouse()
 	
 	for _, player in Players:GetPlayers() do
 		if player ~= LocalPlayer and player.Character then
-			local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
+			local aimPart = player.Character:FindFirstChild(TargetPartName)
 			local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
 			
-			if rootPart and humanoid and humanoid.Health > 0 then
-				local distance3D = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")) 
-					and (rootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude or 0
+			if aimPart and humanoid and humanoid.Health > 0 then
+				local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+				local distance3D = localRoot and (aimPart.Position - localRoot.Position).Magnitude or 0
 				
 				if distance3D <= MaxLockDistance then
-					local screenPos, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
+					local screenPos, onScreen = Camera:WorldToViewportPoint(aimPart.Position)
 					if onScreen then
 						local mouseDistance = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
 						if mouseDistance < shortestDistance then
@@ -103,7 +104,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	
 	if input.KeyCode == LockKeybind then
 		isHolding = true
-		-- Khi vừa đè phím, lập tức quét tìm mục tiêu gần chuột nhất để khóa
+		-- Lập tức quét tìm người gần chuột nhất để khóa cứng vào ĐẦU họ
 		lockedTarget = getClosestPlayerToMouse()
 	end
 end)
@@ -111,33 +112,33 @@ end)
 UserInputService.InputEnded:Connect(function(input, gameProcessed)
 	if input.KeyCode == LockKeybind then
 		isHolding = false
-		lockedTarget = nil -- Nhả phím E = Hủy khóa ngay lập tức
+		lockedTarget = nil -- Nhả phím E = Hủy khóa ngay lập tức, trả lại chuột tự do
 	end
 end)
 
 -- VÒNG LẶP CẬP NHẬT CAMERA THEO KHUNG HÌNH (RENDER STEPPED)
 RunService.RenderStepped:Connect(function()
-	-- Nếu không đè phím hoặc không có mục tiêu thì dừng xử lý camera
+	-- Nếu không đè phím hoặc không tìm thấy mục tiêu thì dừng xử lý
 	if not isHolding or not lockedTarget then return end
 	
-	-- KIỂM TRA ĐIỀU KIỆN TỰ ĐỘNG HỦY KHÓA KHI MỤC TIÊU KHÔNG CÒN HỢP LỆ
+	-- KIỂM TRA ĐIỀU KIỆN TỰ ĐỘNG HỦY KHÓA
 	if not lockedTarget.Parent or not lockedTarget.Character then
 		lockedTarget = nil
 		return
 	end
 	
-	local targetRoot = lockedTarget.Character:FindFirstChild("HumanoidRootPart")
+	local targetHead = lockedTarget.Character:FindFirstChild(TargetPartName)
 	local targetHumanoid = lockedTarget.Character:FindFirstChildOfClass("Humanoid")
 	
-	if not targetRoot or not targetHumanoid or targetHumanoid.Health <= 0 then
-		-- Nếu mục tiêu chết, tự động quét tìm mục tiêu mới luôn (khi vẫn đang đè giữ E)
+	if not targetHead or not targetHumanoid or targetHumanoid.Health <= 0 then
+		-- Nếu mục tiêu cũ gục xuống, tự động tìm mục tiêu mới luôn nếu vẫn đang giữ chặt phím E
 		lockedTarget = getClosestPlayerToMouse()
 		return
 	end
 	
-	-- TỰ ĐỘNG XOAY CAMERA BÁM THEO MỤC TIÊU
+	-- TỰ ĐỘNG XOAY CAMERA BÁM CHẶT VÀO ĐẦU MỤC TIÊU
 	local currentCameraCFrame = Camera.CFrame
-	local targetRotation = CFrame.new(currentCameraCFrame.Position, targetRoot.Position)
+	local targetRotation = CFrame.new(currentCameraCFrame.Position, targetHead.Position)
 	
 	Camera.CFrame = currentCameraCFrame:Lerp(targetRotation, 1 / Smoothness)
 end)
