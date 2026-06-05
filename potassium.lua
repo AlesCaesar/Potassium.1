@@ -26,15 +26,12 @@ local isHolding = false           -- Trạng thái có đang đè phím hay khô
 -- PHẦN 1: LOGIC HỆ THỐNG VIỀN TRẮNG (ESP)
 -- ==========================================
 
--- HÀM TẠO HIGHLIGHT CHO NHÂN VẬT
 local function applyHighlight(character)
 	if not character then return end
 	
-	-- Kiểm tra nếu nhân vật đã có Highlight rồi thì bỏ qua không tạo trùng
 	local existingHighlight = character:FindFirstChildOfClass("Highlight")
 	if existingHighlight then return end
 	
-	-- Tạo một Highlight mới tinh bọc viền trắng, rỗng ruột
 	local newHighlight = Instance.new("Highlight")
 	newHighlight.Name = "PlayerESP"
 	newHighlight.Adornee = character
@@ -43,31 +40,25 @@ local function applyHighlight(character)
 	newHighlight.FillTransparency = FILL_TRANSPARENCY
 	newHighlight.Enabled = true
 	
-	-- Đặt vào nhân vật
 	newHighlight.Parent = character
 end
 
--- HÀM QUẢN LÝ TỪNG NGƯỜI CHƠI THAM GIA
 local function onPlayerAdded(player)
-	-- Bỏ qua không tạo Highlight cho chính bản thân bạn
 	if player == Players.LocalPlayer then return end
 	
-	-- Nếu họ đã có nhân vật sẵn trên map, tạo Highlight ngay
 	if player.Character then
 		applyHighlight(player.Character)
 	end
 	
-	-- Lắng nghe mỗi khi họ bị chết và hồi sinh lại (CharacterAdded)
 	player.CharacterAdded:Connect(function(character)
 		applyHighlight(character)
 	end)
 end
 
 -- ==========================================
--- PHẦN 2: LOGIC KHÓA MỤC TIÊU (LOCK-ON VÀO ĐẦU)
+-- PHẦN 2: LOGIC KHÓA MỤC TIÊU (LOCK-ON CẢI TIẾN)
 -- ==========================================
 
--- HÀM TÌM MỤC TIÊU PHÙ HỢP GẦN CHUỘT NHẤT (DỰA TRÊN VỊ TRÍ ĐẦU)
 local function getClosestPlayerToMouse()
 	local closestPlayer = nil
 	local shortestDistance = FOVRadius
@@ -98,45 +89,44 @@ local function getClosestPlayerToMouse()
 	return closestPlayer
 end
 
--- LOGIC ĐÈ GIỮ (HOLD) VÀ NHẢ PHÍM (RELEASE)
+-- ĐÈ GIỮ VÀ NHẢ PHÍM
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
-	
 	if input.KeyCode == LockKeybind then
 		isHolding = true
-		-- Lập tức quét tìm người gần chuột nhất để khóa cứng vào ĐẦU họ
-		lockedTarget = getClosestPlayerToMouse()
 	end
 end)
 
 UserInputService.InputEnded:Connect(function(input, gameProcessed)
 	if input.KeyCode == LockKeybind then
 		isHolding = false
-		lockedTarget = nil -- Nhả phím E = Hủy khóa ngay lập tức, trả lại chuột tự do
+		lockedTarget = nil -- Hủy khóa ngay lập tức
 	end
 end)
 
--- VÒNG LẶP CẬP NHẬT CAMERA THEO KHUNG HÌNH (RENDER STEPPED)
+-- VÒNG LẶP RENDER STEPPED (CẬP NHẬT LIÊN TỤC TRÁNH ĐƠ TÂM)
 RunService.RenderStepped:Connect(function()
-	-- Nếu không đè phím hoặc không tìm thấy mục tiêu thì dừng xử lý
-	if not isHolding or not lockedTarget then return end
+	if not isHolding then return end
 	
-	-- KIỂM TRA ĐIỀU KIỆN TỰ ĐỘNG HỦY KHÓA
-	if not lockedTarget.Parent or not lockedTarget.Character then
-		lockedTarget = nil
-		return
+	-- SỬA LỖI ĐƠ: Nếu chưa có mục tiêu, hoặc mục tiêu cũ không hợp lệ/đã chết -> Quét tìm liên tục từng khung hình
+	if not lockedTarget or not lockedTarget.Parent or not lockedTarget.Character then
+		lockedTarget = getClosestPlayerToMouse()
+	else
+		local targetHead = lockedTarget.Character:FindFirstChild(TargetPartName)
+		local targetHumanoid = lockedTarget.Character:FindFirstChildOfClass("Humanoid")
+		
+		if not targetHead or not targetHumanoid or targetHumanoid.Health <= 0 then
+			lockedTarget = getClosestPlayerToMouse()
+		end
 	end
+	
+	-- Nếu sau khi quét lại vẫn không thấy ai trong FOV thì dừng xử lý frame này
+	if not lockedTarget then return end
 	
 	local targetHead = lockedTarget.Character:FindFirstChild(TargetPartName)
-	local targetHumanoid = lockedTarget.Character:FindFirstChildOfClass("Humanoid")
+	if not targetHead then return end
 	
-	if not targetHead or not targetHumanoid or targetHumanoid.Health <= 0 then
-		-- Nếu mục tiêu cũ gục xuống, tự động tìm mục tiêu mới luôn nếu vẫn đang giữ chặt phím E
-		lockedTarget = getClosestPlayerToMouse()
-		return
-	end
-	
-	-- TỰ ĐỘNG XOAY CAMERA BÁM CHẶT VÀO ĐẦU MỤC TIÊU
+	-- XOAY CAMERA BÁM THEO MỤC TIÊU
 	local currentCameraCFrame = Camera.CFrame
 	local targetRotation = CFrame.new(currentCameraCFrame.Position, targetHead.Position)
 	
@@ -147,10 +137,9 @@ end)
 -- PHẦN 3: KÍCH HOẠT HỆ THỐNG KHI VÀO GAME
 -- ==========================================
 
--- 1. Quét những người chơi đã vào game trước bạn để vẽ viền trắng
 for _, player in Players:GetPlayers() do
 	onPlayerAdded(player)
 end
 
--- 2. Lắng nghe những người chơi mới sẽ vào game sau này để vẽ viền trắng
+-- Fix lỗi mất ESP khi người chơi out/vào lại hoặc hồi sinh
 Players.PlayerAdded:Connect(onPlayerAdded)
