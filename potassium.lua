@@ -1,67 +1,64 @@
--- SERVICES
+-- CHỜ GAME TẢI XONG ĐỂ TRÁNH LỖI KHỞI ĐỘNG
+if not game:IsLoaded() then game.Loaded:Wait() end
+
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
+-- Cách lấy Camera an toàn hơn, tự động cập nhật nếu Camera cũ bị reset
+local function getCamera()
+	return workspace.CurrentCamera or workspace:FindFirstChildOfClass("Camera")
+end
 
--- CẤU HÌNH HỆ THỐNG LOCK-ON (HOLD PHÍM E - CHỈ NGẮM ĐẦU)
-local LockKeybind = Enum.KeyCode.E -- Phím bấm (Đè giữ)
-local TargetPartName = "Head"      -- Thay đổi mục tiêu khóa từ HumanoidRootPart sang ĐẦU (Head)
-local MaxLockDistance = 500       -- Khoảng cách tối đa (Studs)
-local FOVRadius = 6000             -- Vòng quét mục tiêu xung quanh chuột
-local Smoothness = 4              -- Độ mượt khi dí theo (càng cao càng mượt)
+-- CẤU HÌNH
+local LockKeybind = Enum.KeyCode.E
+local TargetPartName = "Head"
+local MaxLockDistance = 500
+local FOVRadius = 6000
+local Smoothness = 4
 
--- CẤU HÌNH HIỆU ỨNG VIỀN TRẮNG (ESP RỖNG RUỘT)
-local OUTLINE_COLOR = Color3.fromRGB(255, 255, 255) -- Màu TRẮNG
-local OUTLINE_TRANSPARENCY = 0                      -- 0 là viền đậm, rõ nét nhất
-local FILL_TRANSPARENCY = 1                         -- 1 là trong suốt hoàn toàn (chỉ giữ lại viền ngoài)
+local OUTLINE_COLOR = Color3.fromRGB(255, 255, 255)
+local OUTLINE_TRANSPARENCY = 0
+local FILL_TRANSPARENCY = 1
 
--- VARIABLES TRẠNG THÁI
-local lockedTarget = nil          -- Lưu trữ nhân vật đang bị khóa
-local isHolding = false           -- Trạng thái có đang đè phím hay không
+local lockedTarget = nil
+local isHolding = false
 
--- ==========================================
--- PHẦN 1: LOGIC HỆ THỐNG VIỀN TRẮNG (ESP)
--- ==========================================
-
+-- ESP VIỀN TRẮNG (Bọc trong pcall để tránh crash script)
 local function applyHighlight(character)
 	if not character then return end
-	
-	local existingHighlight = character:FindFirstChildOfClass("Highlight")
-	if existingHighlight then return end
-	
-	local newHighlight = Instance.new("Highlight")
-	newHighlight.Name = "PlayerESP"
-	newHighlight.Adornee = character
-	newHighlight.OutlineColor = OUTLINE_COLOR
-	newHighlight.OutlineTransparency = OUTLINE_TRANSPARENCY
-	newHighlight.FillTransparency = FILL_TRANSPARENCY
-	newHighlight.Enabled = true
-	
-	newHighlight.Parent = character
+	pcall(function()
+		local existingHighlight = character:FindFirstChild("PlayerESP")
+		if existingHighlight then return end
+		
+		local newHighlight = Instance.new("Highlight")
+		newHighlight.Name = "PlayerESP"
+		newHighlight.Adornee = character
+		newHighlight.OutlineColor = OUTLINE_COLOR
+		newHighlight.OutlineTransparency = OUTLINE_TRANSPARENCY
+		newHighlight.FillTransparency = FILL_TRANSPARENCY
+		newHighlight.Enabled = true
+		newHighlight.Parent = character
+	end)
 end
 
 local function onPlayerAdded(player)
-	if player == Players.LocalPlayer then return end
-	
-	if player.Character then
-		applyHighlight(player.Character)
-	end
-	
+	if player == LocalPlayer then return end
+	if player.Character then applyHighlight(player.Character) end
 	player.CharacterAdded:Connect(function(character)
+		task.wait(0.5) -- Chờ nhân vật load xong hẳn rồi vẽ viền
 		applyHighlight(character)
 	end)
 end
 
--- ==========================================
--- PHẦN 2: LOGIC KHÓA MỤC TIÊU (LOCK-ON CẢI TIẾN)
--- ==========================================
-
+-- LOGIC TÌM MỤC TIÊU
 local function getClosestPlayerToMouse()
 	local closestPlayer = nil
 	local shortestDistance = FOVRadius
+	local camera = getCamera()
+	if not camera then return nil end
+	
 	local mousePos = UserInputService:GetMouseLocation()
 	
 	for _, player in Players:GetPlayers() do
@@ -74,7 +71,8 @@ local function getClosestPlayerToMouse()
 				local distance3D = localRoot and (aimPart.Position - localRoot.Position).Magnitude or 0
 				
 				if distance3D <= MaxLockDistance then
-					local screenPos, onScreen = Camera:WorldToViewportPoint(aimPart.Position)
+					-- Chuyển tọa độ 3D của ĐẦU sang tọa độ màn hình 2D
+					local screenPos, onScreen = camera:WorldToViewportPoint(aimPart.Position)
 					if onScreen then
 						local mouseDistance = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
 						if mouseDistance < shortestDistance then
@@ -89,7 +87,7 @@ local function getClosestPlayerToMouse()
 	return closestPlayer
 end
 
--- ĐÈ GIỮ VÀ NHẢ PHÍM
+-- SỰ KIỆN PHÍM BẤM
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	if input.KeyCode == LockKeybind then
@@ -100,15 +98,17 @@ end)
 UserInputService.InputEnded:Connect(function(input, gameProcessed)
 	if input.KeyCode == LockKeybind then
 		isHolding = false
-		lockedTarget = nil -- Hủy khóa ngay lập tức
+		lockedTarget = nil
 	end
 end)
 
--- VÒNG LẶP RENDER STEPPED (CẬP NHẬT LIÊN TỤC TRÁNH ĐƠ TÂM)
+-- VÒNG LẶP KHÓA MỤC TIÊU
 RunService.RenderStepped:Connect(function()
 	if not isHolding then return end
 	
-	-- SỬA LỖI ĐƠ: Nếu chưa có mục tiêu, hoặc mục tiêu cũ không hợp lệ/đã chết -> Quét tìm liên tục từng khung hình
+	local camera = getCamera()
+	if not camera then return end
+	
 	if not lockedTarget or not lockedTarget.Parent or not lockedTarget.Character then
 		lockedTarget = getClosestPlayerToMouse()
 	else
@@ -120,26 +120,21 @@ RunService.RenderStepped:Connect(function()
 		end
 	end
 	
-	-- Nếu sau khi quét lại vẫn không thấy ai trong FOV thì dừng xử lý frame này
 	if not lockedTarget then return end
 	
 	local targetHead = lockedTarget.Character:FindFirstChild(TargetPartName)
 	if not targetHead then return end
 	
-	-- XOAY CAMERA BÁM THEO MỤC TIÊU
-	local currentCameraCFrame = Camera.CFrame
-	local targetRotation = CFrame.new(currentCameraCFrame.Position, targetHead.Position)
-	
-	Camera.CFrame = currentCameraCFrame:Lerp(targetRotation, 1 / Smoothness)
+	-- Di chuyển camera mượt mà bám theo đầu đối thủ
+	pcall(function()
+		local currentCameraCFrame = camera.CFrame
+		local targetRotation = CFrame.new(currentCameraCFrame.Position, targetHead.Position)
+		camera.CFrame = currentCameraCFrame:Lerp(targetRotation, 1 / Smoothness)
+	end)
 end)
 
--- ==========================================
--- PHẦN 3: KÍCH HOẠT HỆ THỐNG KHI VÀO GAME
--- ==========================================
-
+-- KÍCH HOẠT
 for _, player in Players:GetPlayers() do
 	onPlayerAdded(player)
 end
-
--- Fix lỗi mất ESP khi người chơi out/vào lại hoặc hồi sinh
 Players.PlayerAdded:Connect(onPlayerAdded)
