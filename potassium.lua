@@ -6,139 +6,35 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
--- ==========================================
--- CẤU HÌNH HỆ THỐNG MẶC ĐỊNH (TỰ ĐỘNG BẬT)
--- ==========================================
-local LockKeybind = Enum.KeyCode.E        -- Phím ngắm mặc định (Đè giữ)
-local ToggleGuiKeybind = Enum.KeyCode.RightShift -- Phím tắt ẩn/hiển thị bảng điều khiển UI
+-- CẤU HÌNH HỆ THỐNG LOCK-ON (HOLD PHÍM E - CHỈ NGẮM ĐẦU)
+local LockKeybind = Enum.KeyCode.E -- Phím bấm (Đè giữ)
+local TargetPartName = "Head"      -- Thay đổi mục tiêu khóa từ HumanoidRootPart sang ĐẦU (Head)
+local MaxLockDistance = 500       -- Khoảng cách tối đa (Studs)
+local FOVRadius = 1500             -- Vòng quét mục tiêu xung quanh chuột
+local Smoothness = 4              -- Độ mượt khi dí theo (càng cao càng mượt)
 
-local TargetPartName = "Head"             -- Mục tiêu khóa vào ĐẦU
-local MaxLockDistance = 500              -- Khoảng cách tối đa (Studs)
-local FOVRadius = 1500                    -- Diện tích ESP quét xung quanh chuột
-local Smoothness = 4                     -- Độ mượt khi dí theo (càng cao càng mượt)
+-- CẤU HÌNH HIỆU ỨNG VIỀN TRẮNG (ESP RỖNG RUỘT)
+local OUTLINE_COLOR = Color3.fromRGB(255, 255, 255) -- Màu TRẮNG
+local OUTLINE_TRANSPARENCY = 0                      -- 0 là viền đậm, rõ nét nhất
+local FILL_TRANSPARENCY = 1                         -- 1 là trong suốt hoàn toàn (chỉ giữ lại viền ngoài)
 
--- TRẠNG THÁI (ĐÃ TỰ ĐỘNG ENABLE SẴN)
-local AimbotEnabled = true
-local EspEnabled = true
-
-local lockedTarget = nil
-local isHolding = false
-local isChangingKeybind = false
-
--- CẤU HÌNH MÀU SẮC ESP VIỀN TRẮNG RỖNG RUỘT
-local OUTLINE_COLOR = Color3.fromRGB(255, 255, 255)
-local OUTLINE_TRANSPARENCY = 0
-local FILL_TRANSPARENCY = 1
+-- VARIABLES TRẠNG THÁI
+local lockedTarget = nil          -- Lưu trữ nhân vật đang bị khóa
+local isHolding = false           -- Trạng thái có đang đè phím hay không
 
 -- ==========================================
--- PHẦN 1: TẠO GIAO DIỆN (UI) ĐIỀU KHIỂN & ĐỔI PHÍM
+-- PHẦN 1: LOGIC HỆ THỐNG VIỀN TRẮNG (ESP)
 -- ==========================================
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "TestEnvironmentUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
-local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 240, 0, 160)
-MainFrame.Position = UDim2.new(0.05, 0, 0.3, 0)
-MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-MainFrame.BorderSizePixel = 0
-MainFrame.Active = true
-MainFrame.Draggable = true -- Cho phép giữ chuột kéo bảng đi khắp màn hình
-MainFrame.Parent = ScreenGui
-
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 6)
-UICorner.Parent = MainFrame
-
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 35)
-Title.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-Title.Text = "  SETTINGS SYSTEM"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Font = Enum.Font.SourceSansBold
-Title.TextSize = 14
-Title.Parent = MainFrame
-
-local TitleCorner = Instance.new("UICorner")
-TitleCorner.CornerRadius = UDim.new(0, 6)
-TitleCorner.Parent = Title
-
--- Dòng trạng thái thông báo tự động bật
-local StatusLabel = Instance.new("TextLabel")
-StatusLabel.Size = UDim2.new(1, 0, 0, 25)
-StatusLabel.Position = UDim2.new(0, 0, 0, 40)
-StatusLabel.BackgroundTransparency = 1
-StatusLabel.Text = "ESP: ENABLED | AIMBOT: ENABLED"
-StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
-StatusLabel.Font = Enum.Font.SourceSansBold
-StatusLabel.TextSize = 13
-StatusLabel.Parent = MainFrame
-
--- Nút đổi phím tắt Aimbot
-local KeybindButton = Instance.new("TextButton")
-KeybindButton.Size = UDim2.new(0, 200, 0, 35)
-KeybindButton.Position = UDim2.new(0, 20, 0, 75)
-KeybindButton.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-KeybindButton.Text = "Aimbot Key: " .. LockKeybind.Name
-KeybindButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-KeybindButton.Font = Enum.Font.SourceSans
-KeybindButton.TextSize = 14
-KeybindButton.Parent = MainFrame
-
-local BtnCorner = Instance.new("UICorner")
-BtnCorner.CornerRadius = UDim.new(0, 4)
-BtnCorner.Parent = KeybindButton
-
--- Ghi chú cách ẩn bảng dưới menu
-local HintLabel = Instance.new("TextLabel")
-HintLabel.Size = UDim2.new(1, 0, 0, 20)
-HintLabel.Position = UDim2.new(0, 0, 0, 125)
-HintLabel.BackgroundTransparency = 1
-HintLabel.Text = "Bấm [RightShift] để Ẩn / Hiện bảng này"
-HintLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
-HintLabel.Font = Enum.Font.SourceSansItalic
-HintLabel.TextSize = 12
-HintLabel.Parent = MainFrame
-
--- Xử lý click đổi phím ngắm bắn
-KeybindButton.MouseButton1Click:Connect(function()
-	isChangingKeybind = true
-	KeybindButton.Text = "Đang chờ bấm phím mới..."
-	KeybindButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
-end)
-
--- Lắng nghe bấm phím từ người chơi (Đổi phím + Ẩn hiện bảng)
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	
-	-- Logic đổi phím ngắm bắn
-	if isChangingKeybind then
-		if input.UserInputType == Enum.UserInputType.Keyboard then
-			LockKeybind = input.KeyCode
-			KeybindButton.Text = "Aimbot Key: " .. LockKeybind.Name
-			KeybindButton.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-			isChangingKeybind = false
-		end
-		return
-	end
-	
-	-- Logic ẩn/hiện bảng điều khiển bằng phím tắt gán sẵn (RightShift)
-	if input.KeyCode == ToggleGuiKeybind then
-		MainFrame.Visible = not MainFrame.Visible
-	end
-end)
-
--- ==========================================
--- PHẦN 2: LOGIC HỆ THỐNG VIỀN TRẮNG (ESP)
--- ==========================================
+-- HÀM TẠO HIGHLIGHT CHO NHÂN VẬT
 local function applyHighlight(character)
-	if not character or not EspEnabled then return end
+	if not character then return end
 	
+	-- Kiểm tra nếu nhân vật đã có Highlight rồi thì bỏ qua không tạo trùng
 	local existingHighlight = character:FindFirstChildOfClass("Highlight")
 	if existingHighlight then return end
 	
+	-- Tạo một Highlight mới tinh bọc viền trắng, rỗng ruột
 	local newHighlight = Instance.new("Highlight")
 	newHighlight.Name = "PlayerESP"
 	newHighlight.Adornee = character
@@ -146,22 +42,33 @@ local function applyHighlight(character)
 	newHighlight.OutlineTransparency = OUTLINE_TRANSPARENCY
 	newHighlight.FillTransparency = FILL_TRANSPARENCY
 	newHighlight.Enabled = true
+	
+	-- Đặt vào nhân vật
 	newHighlight.Parent = character
 end
 
+-- HÀM QUẢN LÝ TỪNG NGƯỜI CHƠI THAM GIA
 local function onPlayerAdded(player)
-	if player == LocalPlayer then return end
-	if player.Character then applyHighlight(player.Character) end
+	-- Bỏ qua không tạo Highlight cho chính bản thân bạn
+	if player == Players.LocalPlayer then return end
+	
+	-- Nếu họ đã có nhân vật sẵn trên map, tạo Highlight ngay
+	if player.Character then
+		applyHighlight(player.Character)
+	end
+	
+	-- Lắng nghe mỗi khi họ bị chết và hồi sinh lại (CharacterAdded)
 	player.CharacterAdded:Connect(function(character)
 		applyHighlight(character)
 	end)
 end
 
 -- ==========================================
--- PHẦN 3: LOGIC KHÓA MỤC TIÊU (AIMBOT CHỈ HOLD)
+-- PHẦN 2: LOGIC KHÓA MỤC TIÊU (LOCK-ON VÀO ĐẦU)
 -- ==========================================
+
+-- HÀM TÌM MỤC TIÊU PHÙ HỢP GẦN CHUỘT NHẤT (DỰA TRÊN VỊ TRÍ ĐẦU)
 local function getClosestPlayerToMouse()
-	if not AimbotEnabled then return nil end
 	local closestPlayer = nil
 	local shortestDistance = FOVRadius
 	local mousePos = UserInputService:GetMouseLocation()
@@ -191,28 +98,30 @@ local function getClosestPlayerToMouse()
 	return closestPlayer
 end
 
--- Ghi nhận đè giữ phím
+-- LOGIC ĐÈ GIỮ (HOLD) VÀ NHẢ PHÍM (RELEASE)
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed or isChangingKeybind then return end
+	if gameProcessed then return end
 	
 	if input.KeyCode == LockKeybind then
 		isHolding = true
+		-- Lập tức quét tìm người gần chuột nhất để khóa cứng vào ĐẦU họ
 		lockedTarget = getClosestPlayerToMouse()
 	end
 end)
 
--- Ghi nhận nhả phím (Giải phóng ngắm)
 UserInputService.InputEnded:Connect(function(input, gameProcessed)
 	if input.KeyCode == LockKeybind then
 		isHolding = false
-		lockedTarget = nil
+		lockedTarget = nil -- Nhả phím E = Hủy khóa ngay lập tức, trả lại chuột tự do
 	end
 end)
 
--- Vòng lặp ghìm camera liên tục vào Đầu mục tiêu theo khung hình
+-- VÒNG LẶP CẬP NHẬT CAMERA THEO KHUNG HÌNH (RENDER STEPPED)
 RunService.RenderStepped:Connect(function()
-	if not isHolding or not lockedTarget or not AimbotEnabled then return end
+	-- Nếu không đè phím hoặc không tìm thấy mục tiêu thì dừng xử lý
+	if not isHolding or not lockedTarget then return end
 	
+	-- KIỂM TRA ĐIỀU KIỆN TỰ ĐỘNG HỦY KHÓA
 	if not lockedTarget.Parent or not lockedTarget.Character then
 		lockedTarget = nil
 		return
@@ -222,10 +131,12 @@ RunService.RenderStepped:Connect(function()
 	local targetHumanoid = lockedTarget.Character:FindFirstChildOfClass("Humanoid")
 	
 	if not targetHead or not targetHumanoid or targetHumanoid.Health <= 0 then
+		-- Nếu mục tiêu cũ gục xuống, tự động tìm mục tiêu mới luôn nếu vẫn đang giữ chặt phím E
 		lockedTarget = getClosestPlayerToMouse()
 		return
 	end
 	
+	-- TỰ ĐỘNG XOAY CAMERA BÁM CHẶT VÀO ĐẦU MỤC TIÊU
 	local currentCameraCFrame = Camera.CFrame
 	local targetRotation = CFrame.new(currentCameraCFrame.Position, targetHead.Position)
 	
@@ -233,9 +144,13 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ==========================================
--- PHẦN 4: KÍCH HOẠT KHI VÀO TRÒ CHƠI
+-- PHẦN 3: KÍCH HOẠT HỆ THỐNG KHI VÀO GAME
 -- ==========================================
+
+-- 1. Quét những người chơi đã vào game trước bạn để vẽ viền trắng
 for _, player in Players:GetPlayers() do
 	onPlayerAdded(player)
 end
+
+-- 2. Lắng nghe những người chơi mới sẽ vào game sau này để vẽ viền trắng
 Players.PlayerAdded:Connect(onPlayerAdded)
